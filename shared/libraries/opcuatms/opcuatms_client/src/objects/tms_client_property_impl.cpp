@@ -138,10 +138,12 @@ void TmsClientPropertyImpl::configurePropertyFields()
                     switch (propertyField)
                     {
                         case details::PropertyField::DefaultValue:
-                            this->defaultValue =
-                                VariantConverter<IBaseObject>::ToDaqObject(reader->getValue(childNodeId, UA_ATTRIBUTEID_VALUE), daqContext);
-                            if (this->defaultValue.assigned() && this->defaultValue.asPtrOrNull<IFreezable>().assigned())
-                                this->defaultValue.freeze();
+                            try
+                            {
+                                this->defaultValue = VariantConverter<IBaseObject>::ToDaqObject(reader->getValue(childNodeId, UA_ATTRIBUTEID_VALUE), daqContext);
+                            }catch(const std::exception& e){
+                                this->defaultValue = VariantConverter<IBaseObject>::ToDaqObject(reader->getValue(nodeId, UA_ATTRIBUTEID_VALUE), daqContext);
+                            }
                             break;
 
                         case details::PropertyField::IsReadOnly:

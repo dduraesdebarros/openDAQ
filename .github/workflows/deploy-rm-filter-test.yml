@@ -1,0 +1,182 @@
+name: filter test for deploy on AWS
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches: [ci/deploy-rm-filter-test]
+
+env:
+  cmake_preset: package
+  package_path: ${{ github.workspace }}/build/_packages
+  wheels_path: ${{ github.workspace }}/build/wheels
+  package_path_rel: build/_packages # WA for https://github.com/actions/checkout/issues/785
+  s3bucket: bb-blueberry-sdk-releases
+  # s3path: release/${{ github.ref_name }}/SDK
+  s3path: other/deploy-ci-test/${{ github.ref_name }}/SDK
+  s3wheels_linux_x86_64_path: releases/${{ github.ref_name }}/Python Wheels (Linux x86_64)
+  s3wheels_win_amd64_path: releases/${{ github.ref_name }}/Python Wheels (Windows amd64)
+  s3docpath: releases/${{ github.ref_name }}/Specifications and documentation
+  s3simulatorpath: releases/${{ github.ref_name }}/Simulator
+  vm_name: device_simulator
+  simulator_app_artifact: SimulatorApp
+  simulator_package_artifact: SimulatorPackage
+  python_version_build: 3.11
+  python_versions: 3.8 3.9 3.10 3.11 3.12
+
+jobs:
+  deploy_windows:
+    runs-on: ${{ matrix.runner }}
+    name: ${{ matrix.name }}
+
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: true
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners
+        include:
+          - name: Windows VS 2022 x64 Release
+            runner: windows-latest
+            cmake_generator: "Visual Studio 17 2022"
+            cmake_generator_platform: x64
+            cmake_build_type: Release
+            cmake_defines: -DOPENDAQ_MSVC_SINGLE_PROCESS_BUILD=ON
+            cpack: NSIS
+          - name: Windows VS 2022 Win32 Release
+            runner: windows-latest
+            cmake_generator: "Visual Studio 17 2022"
+            cmake_generator_platform: Win32
+            cmake_build_type: Release
+            cmake_defines: -DOPENDAQ_GENERATE_PYTHON_BINDINGS=OFF -DOPENDAQ_MSVC_SINGLE_PROCESS_BUILD=ON
+            cpack: NSIS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # - name: Configure and build Wheels
+      - name: Copy some files with new name
+        if: matrix.cmake_generator_platform != 'Win32'
+        run: |
+          mkdir build
+          # cd build
+          # mkdir wheels
+          # $versions = "${{ env.python_versions }}".split(" ")
+          # foreach ($version in $versions) {
+          #   Write-Output "Building for Python $version"
+          #   cmake -G "${{ matrix.cmake_generator }}" -A ${{ matrix.cmake_generator_platform }} --preset ${{ env.cmake_preset }} ${{ matrix.cmake_defines }} -DCI_GIT_BRANCH=${{ github.ref }} -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} "-DOPENDAQ_PYTHON_VERSION=$version" ..
+          #   cmake --build . --config ${{ matrix.cmake_build_type }}
+          #   Write-Output "Creating virtual environment for Python $version"
+          #   Invoke-Expression "py -$version -m venv venv"
+          #   ./venv/Scripts/activate
+          #   pip install numpy pybind11-stubgen
+          #   $remove_python_module_flag = "-r"
+          #   if ($version -eq $versions[-1]) {
+          #     $remove_python_module_flag = $null
+          #   }
+          #   Invoke-Expression "py -${{env.python_version_build}} ../bindings/python/package/build_pip.py -l bin/${{ matrix.cmake_build_type }} $remove_python_module_flag"
+          #   Copy-Item pip/packages/*.whl wheels
+          #   deactivate
+          #   Remove-Item venv -Recurse
+          # }
+          # create two files with used name format
+          # ${{ github.workspace }}/build/_packages
+          mkdir ${{ env.package_path }}
+          Write-Output "# simulate ${{ matrix.cmake_generator_platform }} build"
+          Get-Date -Format "yyyy-MM-dd HH:mm:ss K" | Out-File -FilePath "${{ env.package_path }}/openDAQ-2.1.0-Win64.exe"
+          Get-ChildItem -Path "${{ env.package_path }}" -Name
+
+      - name: Configure and build without Wheels
+        if: matrix.cmake_generator_platform == 'Win32'
+        run: |
+          mkdir build
+          # cd build
+          # Write-Output "Building for Win32"
+          # cmake -G "${{ matrix.cmake_generator }}" -A ${{ matrix.cmake_generator_platform }} --preset ${{ env.cmake_preset }} ${{ matrix.cmake_defines }} -DCI_GIT_BRANCH=${{ github.ref }} -DCMAKE_BUILD_TYPE=${{ matrix.cmake_build_type }} ..
+          # cmake --build . --config ${{ matrix.cmake_build_type }}
+          mkdir ${{ env.package_path }}
+          Write-Output "# simulate ${{ matrix.cmake_generator_platform }} build"
+          Get-Date -Format "yyyy-MM-dd HH:mm:ss K" | Out-File -FilePath "${{ env.package_path }}/openDAQ-2.1.0-Win32.exe"
+          Get-ChildItem -Path "${{ env.package_path }}" -Name
+
+      # - name: Package
+      #   working-directory: build
+      #   run: cpack -C ${{ matrix.cmake_build_type }} -G ${{ matrix.cpack }}
+
+      - uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Get short SHA
+        if: github.ref == 'refs/heads/main'
+        id: short-sha
+        uses: benjlevesque/short-sha@v2.2
+
+      - name: Rename package
+        shell: pwsh
+        working-directory: ${{ env.package_path }}
+        run: |
+          Get-ChildItem -Path .\* -Include *.exe | Rename-Item -NewName {$_.FullName.ToLower()}
+          Get-ChildItem -Path . -Name
+
+      - name: Rename package (main)
+        # if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        working-directory: ${{ env.package_path }}
+        run: |
+          # Get-ChildItem -Path .\* -Include *.exe | Rename-Item -NewName {$_.BaseName + '_${{ steps.short-sha.outputs.sha }}' + $_.Extension}
+          Get-ChildItem -Path .\* -Include *.exe | Rename-Item -NewName {$_.BaseName + '_hash' + $_.Extension}
+          Get-ChildItem -Path . -Name
+
+      # - name: Rename wheels (main)
+      #   if: github.ref == 'refs/heads/main' && matrix.cmake_generator_platform != 'Win32'
+      #   shell: pwsh
+      #   working-directory: ${{ env.wheels_path }}
+      #   run: |
+      #     foreach($pckg in Get-ChildItem -Filter *.whl -Path .) {
+      #       $pckg_split = $pckg.Name.split("-")
+      #       $pckg_split[1] = $pckg_split[1] + "_${{ steps.short-sha.outputs.sha }}"
+      #       $renamed = $pckg_split -Join "-"
+      #       Rename-Item -Path $pckg -NewName $renamed
+      #     }
+
+      - name: Upload package to S3
+        working-directory: ${{ env.package_path }}
+        run: |
+          # aws s3 rm "s3://${{ env.s3bucket }}/${{ env.s3path }}/" --recursive --exclude '*' --include '*.exe'
+          Write-Output "# S3 state"
+          aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3path }}/" --recursive --human-readable
+          Write-Output "# remove '*-$("${{ matrix.cmake_generator_platform }}".Replace("x64", "win64"))_*.exe' from S3"
+          aws s3 rm "s3://${{ env.s3bucket }}/${{ env.s3path }}/" --recursive --exclude '*' --include "*-$("${{ matrix.cmake_generator_platform }}".Replace("x64", "win64"))_*.exe"
+          aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3path }}/" --recursive --human-readable
+          Write-Output "# copy '.' to S3"
+          aws s3 cp . "s3://${{ env.s3bucket }}/${{ env.s3path }}/" --recursive
+          aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3path }}/" --recursive --human-readable
+
+      # - name: Upload Wheels to S3
+      #   if: github.ref == 'refs/heads/main' && matrix.cmake_generator_platform != 'Win32'
+      #   working-directory: ${{ env.wheels_path }}
+      #   run: |
+      #     aws s3 rm "s3://${{ env.s3bucket }}/${{ env.s3wheels_win_amd64_path }}" --recursive --exclude '*' --include '*.whl'
+      #     aws s3 cp . "s3://${{ env.s3bucket }}/${{ env.s3wheels_win_amd64_path }}" --recursive
+
+      # - name: Upload package
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: Package (${{ matrix.name }})
+      #     path: ${{ env.package_path }}
+      #     retention-days: 7
+
+      # - name: Upload Wheels
+      #   if: matrix.cmake_generator_platform != 'Win32'
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: Wheels (${{ matrix.name }})
+      #     path: ${{ env.wheels_path }}
+      #     retention-days: 7
+

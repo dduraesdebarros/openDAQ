@@ -9,17 +9,20 @@ on:
 env:
   cmake_preset: package
   build_path: ${{ github.workspace }}/build
-  package_path: $build_path/_packages
-  wheels_path: $build_path/wheels
+  package_path: ${{ github.workspace }}/build/_packages
+  wheels_path: ${{ github.workspace }}/build/wheels
   package_path_rel: build/_packages # WA for https://github.com/actions/checkout/issues/785
   s3bucket: bb-blueberry-sdk-releases
-  # s3path: releases/${{ github.ref_name }}
-  s3path: other/deploy-ci-test/${{ github.ref_name }}
-  s3sdk_path: $s3path/SDK
-  s3wheels_linux_x86_64_path: $s3path/Python Wheels (Linux x86_64)
-  s3wheels_win_amd64_path: $s3path/Python Wheels (Windows amd64)
-  s3docpath: $s3path/Specifications and documentation
-  s3simulatorpath: $s3path/Simulator
+  # s3sdk_path: releases/${{ github.ref_name }}/SDK
+  # s3wheels_linux_x86_64_path: releases/${{ github.ref_name }}/Python Wheels (Linux x86_64)
+  # s3wheels_win_amd64_path: releases/${{ github.ref_name }}/Python Wheels (Windows amd64)
+  # s3docpath: releases/${{ github.ref_name }}/Specifications and documentation
+  # s3simulatorpath: releases/${{ github.ref_name }}/Simulator
+  s3sdk_path: other/deploy-ci-test/${{ github.ref_name }}/SDK
+  s3wheels_linux_x86_64_path: other/deploy-ci-test/${{ github.ref_name }}/Python Wheels (Linux x86_64)
+  s3wheels_win_amd64_path: other/deploy-ci-test/${{ github.ref_name }}/Python Wheels (Windows amd64)
+  s3docpath: other/deploy-ci-test/${{ github.ref_name }}/Specifications and documentation
+  s3simulatorpath: other/deploy-ci-test/${{ github.ref_name }}/Simulator
   vm_name: device_simulator
   simulator_app_artifact: SimulatorApp
   simulator_package_artifact: SimulatorPackage
@@ -86,7 +89,6 @@ jobs:
           #   Remove-Item venv -Recurse
           # }
           # create two files with used name format
-          # ${{ env.build_path }}/_packages
           mkdir ${{ env.package_path }}
           Write-Output "# simulate ${{ matrix.cmake_generator_platform }} build"
           Get-Date -Format "yyyy-MM-dd HH:mm:ss K" | Out-File -FilePath "${{ env.package_path }}/openDAQ-2.1.0-Win64.exe"

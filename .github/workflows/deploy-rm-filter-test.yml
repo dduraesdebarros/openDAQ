@@ -21,6 +21,7 @@ env:
   s3sdk_path: other/deploy-ci-test/${{ github.ref_name }}/SDK
   s3wheels_linux_x86_64_path: other/deploy-ci-test/${{ github.ref_name }}/Python Wheels (Linux x86_64)
   s3wheels_win_amd64_path: other/deploy-ci-test/${{ github.ref_name }}/Python Wheels (Windows amd64)
+  s3dotnet_path: other/deploy-ci-test/${{ github.ref_name }}/.NET Bindings
   s3docpath: other/deploy-ci-test/${{ github.ref_name }}/Specifications and documentation
   s3simulatorpath: other/deploy-ci-test/${{ github.ref_name }}/Simulator
   vm_name: device_simulator
@@ -66,6 +67,7 @@ jobs:
       # - name: Configure and build Wheels
       - name: Copy some files with new name
         if: matrix.cmake_generator_platform != 'Win32'
+        shell: pwsh
         run: |
           mkdir build
           # cd build
@@ -92,10 +94,12 @@ jobs:
           mkdir ${{ env.package_path }}
           Write-Output "# simulate ${{ matrix.cmake_generator_platform }} build"
           Get-Date -Format "yyyy-MM-dd HH:mm:ss K" | Out-File -FilePath "${{ env.package_path }}/openDAQ-2.1.0-Win64.exe"
+          Get-Date -Format "yyyy-MM-dd HH:mm:ss K" | Out-File -FilePath "${{ env.package_path }}/openDAQ.Net.2.0.0.10.nupkg"
           Get-ChildItem -Path "${{ env.package_path }}" -Name
 
       - name: Configure and build without Wheels
         if: matrix.cmake_generator_platform == 'Win32'
+        shell: pwsh
         run: |
           mkdir build
           # cd build
@@ -129,6 +133,13 @@ jobs:
           Get-ChildItem -Path .\* -Include *.exe | Rename-Item -NewName {$_.FullName.ToLower()}
           Get-ChildItem -Path . -Name
 
+      - name: Rename package (NuGet)
+        shell: pwsh
+        working-directory: ${{ env.package_path }}
+        run: |
+          Get-ChildItem -Path .\* -Include *.nupkg | Rename-Item -NewName {$_.FullName.ToLower()}
+          Get-ChildItem -Path . -Name
+
       - name: Rename package (main)
         # if: github.ref == 'refs/heads/main'
         shell: pwsh
@@ -158,10 +169,8 @@ jobs:
           aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive --human-readable
           Write-Output "# remove '*-$("${{ matrix.cmake_generator_platform }}".Replace("x64", "win64"))_*.exe' from S3"
           aws s3 rm "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive --exclude '*' --include "*-$("${{ matrix.cmake_generator_platform }}".Replace("x64", "win64"))_*.exe"
-          aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive --human-readable
-          Write-Output "# copy '.' to S3"
-          aws s3 cp . "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive
-          aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive --human-readable
+          Write-Output "# copy '*.exe' to S3"
+          aws s3 cp . "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive --exclude '*' --include '*.exe'
 
       # - name: Upload Wheels to S3
       #   if: github.ref == 'refs/heads/main' && matrix.cmake_generator_platform != 'Win32'
@@ -169,6 +178,18 @@ jobs:
       #   run: |
       #     aws s3 rm "s3://${{ env.s3bucket }}/${{ env.s3wheels_win_amd64_path }}" --recursive --exclude '*' --include '*.whl'
       #     aws s3 cp . "s3://${{ env.s3bucket }}/${{ env.s3wheels_win_amd64_path }}" --recursive
+
+      - name: Upload NuGet to S3
+        # if: github.ref == 'refs/heads/main' && matrix.cmake_generator_platform != 'Win32'
+        if: matrix.cmake_generator_platform != 'Win32'
+        working-directory: ${{ env.package_path }}
+        run: |
+          Write-Output "# S3 state"
+          aws s3 ls "s3://${{ env.s3bucket }}/${{ env.s3sdk_path }}/" --recursive --human-readable
+          Write-Output "# remove '*.nupkg' from S3"
+          aws s3 rm "s3://${{ env.s3bucket }}/${{ env.s3dotnet_path }}" --recursive --exclude '*' --include '*.nupkg'
+          Write-Output "# copy '*.nupkg' to S3"
+          aws s3 cp . "s3://${{ env.s3bucket }}/${{ env.s3dotnet_path }}" --recursive --exclude '*' --include '*.nupkg'
 
       # - name: Upload package
       #   uses: actions/upload-artifact@v3

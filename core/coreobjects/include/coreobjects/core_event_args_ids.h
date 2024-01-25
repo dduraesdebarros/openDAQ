@@ -41,6 +41,22 @@ namespace core_event_ids
     constexpr Int TagsChanged = 110;
 }
 
+enum class CoreEventId
+{
+    PropertyValueChanged = 0,
+    PropertyObjectUpdateEnd = 10,
+    PropertyAdded = 20,
+    PropertyRemoved = 30,
+    ComponentAdded = 40,
+    ComponentRemoved = 50,
+    SignalConnected = 60,
+    SignalDisconnected = 70,
+    DataDescriptorChanged = 80,
+    ComponentUpdateEnd = 90,
+    AttributeChanged = 100,
+    TagsChanged = 110,
+};
+
 /*!@}*/
 
 END_NAMESPACE_OPENDAQ

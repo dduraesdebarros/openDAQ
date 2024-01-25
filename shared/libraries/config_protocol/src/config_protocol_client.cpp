@@ -228,6 +228,11 @@ bool ConfigProtocolClientComm::getConnected() const
     return connected;
 }
 
+ContextPtr ConfigProtocolClientComm::getDaqContext()
+{
+    return daqContext;
+}
+
 BaseObjectPtr ConfigProtocolClientComm::sendComponentCommand(const StringPtr& globalId,
                                                              const StringPtr& command,
                                                              ParamsDictPtr& params,
@@ -333,7 +338,17 @@ void ConfigProtocolClient::triggerNotificationPacket(const PacketBuffer& packet)
 
 void ConfigProtocolClient::triggerNotificationObject(const BaseObjectPtr& object)
 {
-    // handle notifications from server
-}
+    ListPtr<IBaseObject> packedEvent = object.asPtrOrNull<IList>();
+    if (!packedEvent.assigned() || packedEvent.getCount() != 2)
+        return;
 
+    std::string globalId = packedEvent[0];
+    globalId.erase(globalId.begin(), globalId.begin() + device.getLocalId().getLength() + 2);
+    const ComponentPtr component = device.findComponent(globalId);
+    if (component.assigned())
+    {
+        const CoreEventArgsPtr argsPtr= packedEvent[1];
+        component.asPtr<IConfigClientObject>()->handleRemoteCoreEvent(component, argsPtr);
+    }
+}
 }

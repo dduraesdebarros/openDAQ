@@ -37,6 +37,7 @@
 #include <opendaq/recursive_search_ptr.h>
 #include <opendaq/component_private_ptr.h>
 #include <opendaq/tags_impl.h>
+#include <opendaq/ids_parser.h>
 
 BEGIN_NAMESPACE_OPENDAQ
 
@@ -67,6 +68,7 @@ public:
     ErrCode INTERFACE_FUNC getVisible(Bool* visible) override;
     virtual ErrCode INTERFACE_FUNC setVisible(Bool visible) override;
     ErrCode INTERFACE_FUNC getOnComponentCoreEvent(IEvent** event) override;
+    ErrCode INTERFACE_FUNC findComponent(IString* id, IComponent** outComponent) override;
 
     // IComponentPrivate
     ErrCode INTERFACE_FUNC lockAttributes(IList* attributes) override;
@@ -136,6 +138,7 @@ protected:
                                               CreateComponentCallback&& createComponentCallback);
 
     virtual BaseObjectPtr getDeserializedParameter(const StringPtr& parameter);
+    ComponentPtr findComponentInternal(const ComponentPtr& component, const std::string& id);
 
 private:
     EventEmitter<const ComponentPtr, const CoreEventArgsPtr> componentCoreEvent;
@@ -536,6 +539,21 @@ ErrCode ComponentImpl<Intf, Intfs...>::getOnComponentCoreEvent(IEvent** event)
     return OPENDAQ_SUCCESS;
 }
 
+template <class Intf, class ... Intfs>
+ErrCode ComponentImpl<Intf, Intfs...>::findComponent(IString* id, IComponent** outComponent)
+{
+    OPENDAQ_PARAM_NOT_NULL(outComponent);
+    OPENDAQ_PARAM_NOT_NULL(id);
+
+    return daqTry(
+        [&]()
+        {
+            *outComponent = findComponentInternal(this->template borrowPtr<ComponentPtr>(),StringPtr(id)).detach();
+
+            return *outComponent == nullptr ? OPENDAQ_NOTFOUND : OPENDAQ_SUCCESS;
+        });
+}
+
 template<class Intf, class ... Intfs>
 ErrCode ComponentImpl<Intf, Intfs ...>::remove()
 {
@@ -849,6 +867,31 @@ template <class Intf, class... Intfs>
 BaseObjectPtr ComponentImpl<Intf, Intfs...>::getDeserializedParameter(const StringPtr&)
 {
     return {};
+}
+
+template <class Intf, class ... Intfs>
+ComponentPtr ComponentImpl<Intf, Intfs...>::findComponentInternal(const ComponentPtr& component, const std::string& id)
+{
+    std::string startStr;
+    std::string restStr;
+    const bool hasSubComponentStr = IdsParser::splitRelativeId(id, startStr, restStr);
+    if (!hasSubComponentStr)
+        startStr = id;
+
+    const auto folder = component.asPtrOrNull<IFolder>(true);
+    if (!folder.assigned())
+        return nullptr;
+
+    if (folder.hasItem(startStr))
+    {
+        const auto subComponent = folder.getItem(startStr);
+        if (hasSubComponentStr)
+            return findComponentInternal(subComponent, restStr);
+
+        return subComponent;
+    }
+
+    return nullptr;
 }
 
 template <class Intf, class ... Intfs>

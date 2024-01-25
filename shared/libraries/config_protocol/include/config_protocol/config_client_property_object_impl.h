@@ -21,6 +21,8 @@
 #include <config_protocol/config_client_procedure_impl.h>
 #include <config_protocol/config_client_object.h>
 
+#include "opendaq/custom_log.h"
+
 namespace daq::config_protocol
 {
 
@@ -57,11 +59,18 @@ public:
     ErrCode INTERFACE_FUNC complete() override;
 
     ErrCode INTERFACE_FUNC getRemoteGlobalId(IString** remoteGlobalId) override;
+    ErrCode INTERFACE_FUNC handleRemoteCoreEvent(IComponent* sender, ICoreEventArgs* args) override;
 
 private:
     bool deserializationComplete;
 
     BaseObjectPtr getValueFromServer(const StringPtr& propName, bool& setValue);
+    virtual void handleRemoteCoreObjectInternal(const ComponentPtr& sender, const CoreEventArgsPtr& args);
+
+    void propertyValueChanged(const CoreEventArgsPtr& args);
+    void propertyObjectUpdateEnd(const CoreEventArgsPtr& args);
+    void propertyAdded(const CoreEventArgsPtr& args);
+    void propertyRemoved(const CoreEventArgsPtr& args);
 };
 
 template <class Impl>
@@ -223,6 +232,36 @@ ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getRemoteGlobalId(IString** re
 }
 
 template <class Impl>
+ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::handleRemoteCoreEvent(IComponent* sender, ICoreEventArgs* args)
+{
+    OPENDAQ_PARAM_NOT_NULL(sender);
+    OPENDAQ_PARAM_NOT_NULL(args);
+
+    try
+    {
+        handleRemoteCoreObjectInternal(sender, args);
+    }
+    catch (const std::exception& e)
+    {
+        const auto loggerComponent = this->clientComm->getDaqContext().getLogger().getOrAddComponent("ConfigClient");
+        StringPtr globalId;
+        const auto argsPtr = CoreEventArgsPtr::Borrow(args);
+        sender->getGlobalId(&globalId);
+        LOG_D("Component {} failed to handle core event {}: {}", globalId, argsPtr.getEventName(), e.what());
+    }
+    catch (...)
+    {
+        const auto loggerComponent = this->clientComm->getDaqContext().getLogger().getOrAddComponent("ConfigClient");
+        StringPtr globalId;
+        const auto argsPtr = CoreEventArgsPtr::Borrow(args);
+        sender->getGlobalId(&globalId);
+        LOG_D("Component {} failed to handle core event {}", globalId, argsPtr.getEventName());
+    }
+
+    return OPENDAQ_SUCCESS;
+}
+
+template <class Impl>
 BaseObjectPtr ConfigClientPropertyObjectBaseImpl<Impl>::getValueFromServer(const StringPtr& propName, bool& setValue)
 {
     const auto prop = Impl::getUnboundProperty(propName);
@@ -239,4 +278,55 @@ BaseObjectPtr ConfigClientPropertyObjectBaseImpl<Impl>::getValueFromServer(const
     }
 }
 
+template <class Impl>
+void ConfigClientPropertyObjectBaseImpl<Impl>::handleRemoteCoreObjectInternal(const ComponentPtr& sender, const CoreEventArgsPtr& args)
+{
+    switch (static_cast<CoreEventId>(args.getEventId()))
+    {
+        case CoreEventId::PropertyValueChanged:
+            propertyValueChanged(args);
+            break;
+        case CoreEventId::PropertyObjectUpdateEnd:
+            propertyObjectUpdateEnd(args);
+            break;
+        case CoreEventId::PropertyAdded:
+            propertyAdded(args);
+            break;
+        case CoreEventId::PropertyRemoved:
+            propertyRemoved(args);
+            break;
+        default:
+            break;
+    }
+}
+
+template <class Impl>
+void ConfigClientPropertyObjectBaseImpl<Impl>::propertyValueChanged(const CoreEventArgsPtr& args)
+{
+    const auto params = args.getParameters();
+    StringPtr propName = params.get("Name");
+    StringPtr path = params.get("Path");
+    if (path != "")
+        propName = path + "." + propName;
+    const auto val = params.get("Value");
+    if (val.assigned())
+        Impl::setPropertyValue(propName, val);
+    else
+        Impl::clearPropertyValue(propName);
+}
+
+template <class Impl>
+void ConfigClientPropertyObjectBaseImpl<Impl>::propertyObjectUpdateEnd(const CoreEventArgsPtr& args)
+{
+}
+
+template <class Impl>
+void ConfigClientPropertyObjectBaseImpl<Impl>::propertyAdded(const CoreEventArgsPtr& args)
+{
+}
+
+template <class Impl>
+void ConfigClientPropertyObjectBaseImpl<Impl>::propertyRemoved(const CoreEventArgsPtr& args)
+{
+}
 }

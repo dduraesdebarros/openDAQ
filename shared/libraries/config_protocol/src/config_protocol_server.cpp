@@ -4,6 +4,8 @@
 #include <config_protocol/config_server_component.h>
 #include <config_protocol/config_server_device.h>
 #include <config_protocol/config_server_input_port.h>
+#include <coreobjects/core_event_args_factory.h>
+#include <coretypes/cloneable.h>
 
 namespace daq::config_protocol
 {
@@ -70,6 +72,13 @@ ConfigProtocolServer::ConfigProtocolServer(DevicePtr rootDevice,
     , componentFinder(std::make_unique<ComponentFinderRootDevice>(this->rootDevice))
 {
     buildRpcDispatchStructure();
+
+    this->rootDevice.getContext().getOnCoreEvent() += event(this, &ConfigProtocolServer::coreEventCallback);
+}
+
+ConfigProtocolServer::~ConfigProtocolServer()
+{
+    this->rootDevice.getContext().getOnCoreEvent() -= event(this, &ConfigProtocolServer::coreEventCallback);
 }
 
 template <class SmartPtr, class F>
@@ -280,4 +289,65 @@ BaseObjectPtr ConfigProtocolServer::getComponent(const ParamsDictPtr& params) co
     return ComponentHolder(component);
 }
 
+void ConfigProtocolServer::coreEventCallback(ComponentPtr& component, CoreEventArgsPtr& eventArgs)
+{
+    const auto packed = packCoreEvent(component, eventArgs);
+    sendNotification(packed);
+}
+
+
+ListPtr<IBaseObject> ConfigProtocolServer::packCoreEvent(const ComponentPtr& component, const CoreEventArgsPtr& args)
+{
+    auto packedEvent = List<IBaseObject>(component.getGlobalId());
+
+    switch (static_cast<CoreEventId>(args.getEventId()))
+    {
+        case CoreEventId::PropertyValueChanged:
+        case CoreEventId::PropertyObjectUpdateEnd:
+        case CoreEventId::PropertyAdded:
+        case CoreEventId::PropertyRemoved:
+            packedEvent.pushBack(removeOwnerFromArgs(args));
+            break;
+        case CoreEventId::SignalConnected:
+            packedEvent.pushBack(convertSignalObjToId(args));
+            break;
+        case CoreEventId::ComponentAdded:
+        case CoreEventId::ComponentRemoved:
+        case CoreEventId::SignalDisconnected:
+        case CoreEventId::DataDescriptorChanged:
+        case CoreEventId::ComponentUpdateEnd:
+        case CoreEventId::AttributeChanged:
+        case CoreEventId::TagsChanged:
+            packedEvent.pushBack(args);
+    }
+    
+    return packedEvent;
+}
+
+CoreEventArgsPtr ConfigProtocolServer::removeOwnerFromArgs(const CoreEventArgsPtr& args)
+{
+    BaseObjectPtr cloned;
+    checkErrorInfo(args.getParameters().asPtr<ICloneable>()->clone(&cloned));
+
+    DictPtr<IString, IBaseObject> dict = cloned;
+    if (dict.hasKey("Owner"))
+        dict.remove("Owner");
+
+    return CoreEventArgs(args.getEventId(), cloned);
+}
+
+CoreEventArgsPtr ConfigProtocolServer::convertSignalObjToId(const CoreEventArgsPtr& args)
+{
+    BaseObjectPtr cloned;
+    checkErrorInfo(args.getParameters().asPtr<ICloneable>()->clone(&cloned));
+
+    DictPtr<IString, IBaseObject> dict = cloned;
+    if (dict.hasKey("Signal"))
+    {
+        const auto globalId = dict.get("Signal").asPtr<IComponent>().getGlobalId();
+        dict.set("Signal", globalId);
+    }
+
+    return CoreEventArgs(args.getEventId(), cloned);
+}
 }

@@ -19,8 +19,10 @@
 #include <coreobjects/core_event_args.h>
 #include <coretypes/event_args_impl.h>
 #include <coretypes/validation.h>
+#include <core_event_args_ptr.h>
 
 BEGIN_NAMESPACE_OPENDAQ
+
 namespace core_event_args_impl
 {
     static std::string getCoreEventName(const Int id)
@@ -60,12 +62,20 @@ namespace core_event_args_impl
 }
 
 
-class CoreEventArgsImpl : public EventArgsBase<ICoreEventArgs>
+class CoreEventArgsImpl : public EventArgsBase<ICoreEventArgs, ISerializable>
 {
 public:
     explicit CoreEventArgsImpl (Int id, const DictPtr<IString, IBaseObject>& parameters);
 
     ErrCode INTERFACE_FUNC getParameters(IDict** parameters) override;
+    
+    ErrCode INTERFACE_FUNC serialize(ISerializer* serializer) override;
+    ErrCode INTERFACE_FUNC getSerializeId(ConstCharPtr* id) const override;
+    
+    static ConstCharPtr SerializeId();
+
+    static ErrCode Deserialize(ISerializedObject* ser, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj);
+
 private:
     DictPtr<IString, IBaseObject> parameters;
     bool validateParameters() const;
@@ -73,7 +83,7 @@ private:
 
 
 inline CoreEventArgsImpl::CoreEventArgsImpl(Int id, const DictPtr<IString, IBaseObject>& parameters)
-    : EventArgsImplTemplate<ICoreEventArgs>(id, core_event_args_impl::getCoreEventName(id))
+    : EventArgsImplTemplate<ICoreEventArgs, ISerializable>(id, core_event_args_impl::getCoreEventName(id))
     , parameters(parameters)
 {
     if (!validateParameters())
@@ -88,18 +98,87 @@ inline ErrCode CoreEventArgsImpl::getParameters(IDict** parameters)
     return OPENDAQ_SUCCESS;
 }
 
+inline ErrCode CoreEventArgsImpl::serialize(ISerializer* serializer)
+{
+    serializer->startTaggedObject(this);
+
+    serializer->key("id");
+    serializer->writeInt(this->eventId);
+
+    serializer->key("params");
+    ISerializable* serializableParams;
+    ErrCode errCode = this->parameters->borrowInterface(ISerializable::Id, reinterpret_cast<void**>(&serializableParams));
+
+    if (errCode == OPENDAQ_ERR_NOINTERFACE)
+        return OPENDAQ_ERR_NOT_SERIALIZABLE;
+
+    if (OPENDAQ_FAILED(errCode))
+        return errCode;
+
+    errCode = serializableParams->serialize(serializer);
+
+    if (OPENDAQ_FAILED(errCode))
+        return errCode;
+
+    serializer->endObject();
+
+    return OPENDAQ_SUCCESS;
+}
+
+inline ErrCode CoreEventArgsImpl::getSerializeId(ConstCharPtr* id) const
+{
+    *id = SerializeId();
+
+    return OPENDAQ_SUCCESS;
+}
+
+inline ConstCharPtr CoreEventArgsImpl::SerializeId()
+{
+    return "CoreEventArgs";
+}
+
+inline ErrCode CoreEventArgsImpl::Deserialize(ISerializedObject* ser, IBaseObject* context, IFunction* factoryCallback, IBaseObject** obj)
+{
+    Int id;
+    ErrCode errCode = ser->readInt("id"_daq, &id);
+    if (OPENDAQ_FAILED(errCode))
+        return errCode;
+
+    BaseObjectPtr params;
+    errCode = ser->readObject("params"_daq, context, factoryCallback, &params);
+    if (OPENDAQ_FAILED(errCode))
+        return errCode;
+
+    try
+    {
+        CoreEventArgsPtr argsPtr; 
+        createCoreEventArgs(&argsPtr, id, params.asPtr<IDict>());
+        *obj = argsPtr.detach();
+    }
+    catch(const DaqException& e)
+    {
+        return e.getErrCode();
+    }
+    catch(...)
+    {
+        return OPENDAQ_ERR_GENERALERROR;
+    }
+
+    return OPENDAQ_SUCCESS;
+}
+
 inline bool CoreEventArgsImpl::validateParameters() const
 {
     switch(eventId)
     {
         case core_event_ids::PropertyValueChanged:
-            return parameters.hasKey("Name") && parameters.hasKey("Value") && parameters.hasKey("Owner");
+            return parameters.hasKey("Name") && parameters.hasKey("Value") && parameters.hasKey("Path");
         case core_event_ids::PropertyObjectUpdateEnd:
-            return parameters.hasKey("UpdatedProperties") && parameters.get("UpdatedProperties").asPtrOrNull<IDict>().assigned() && parameters.hasKey("Owner");
+            return parameters.hasKey("UpdatedProperties") && parameters.get("UpdatedProperties").asPtrOrNull<IDict>().assigned() && parameters.hasKey("Path");
         case core_event_ids::PropertyAdded:
-            return parameters.hasKey("Property") && parameters.hasKey("Owner");
+            return parameters.hasKey("Property") && parameters.hasKey("Path");
         case core_event_ids::PropertyRemoved:
-            return parameters.hasKey("Name") && parameters.hasKey("Owner");
+            return parameters.hasKey("Name") && parameters.hasKey("Path");
         case core_event_ids::ComponentAdded:
             return parameters.hasKey("Component");
         case core_event_ids::ComponentRemoved:
@@ -118,5 +197,7 @@ inline bool CoreEventArgsImpl::validateParameters() const
 
     return true;
 }
+
+OPENDAQ_REGISTER_DESERIALIZE_FACTORY(CoreEventArgsImpl)
 
 END_NAMESPACE_OPENDAQ

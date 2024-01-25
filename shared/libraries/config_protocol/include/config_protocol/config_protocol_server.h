@@ -46,6 +46,8 @@ class ConfigProtocolServer
 {
 public:
     ConfigProtocolServer(DevicePtr rootDevice, NotificationReadyCallback notificationReadyCallback);
+    ~ConfigProtocolServer();
+
     void buildRpcDispatchStructure();
 
     // called from transport layer
@@ -86,6 +88,12 @@ private:
 
     template <class SmartPtr, class Handler>
     void addHandler(const std::string& name, const Handler& handler);
+    
+    void coreEventCallback(ComponentPtr& component, CoreEventArgsPtr& eventArgs);
+    
+    ListPtr<IBaseObject> packCoreEvent(const ComponentPtr& component, const CoreEventArgsPtr& args);
+    CoreEventArgsPtr removeOwnerFromArgs(const CoreEventArgsPtr& args);
+    CoreEventArgsPtr convertSignalObjToId(const CoreEventArgsPtr& args);
 };
 
 }

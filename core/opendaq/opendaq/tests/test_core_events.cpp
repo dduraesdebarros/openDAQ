@@ -56,7 +56,7 @@ TEST_F(CoreEventTest, PropertyChanged)
     component.asPtrOrNull<IPropertyObjectInternal>().enableCoreEventTrigger();
     context.getOnCoreEvent() += [&](const ComponentPtr& comp, const CoreEventArgsPtr& args)
     {
-        ASSERT_EQ(args.getEventId(), core_event_ids::PropertyValueChanged);
+        ASSERT_EQ(args.getEventId(), static_cast<Int>(CoreEventId::PropertyValueChanged));
         ASSERT_EQ(args.getEventName(), "PropertyValueChanged");
         ASSERT_EQ(comp, component);
         ASSERT_TRUE(args.getParameters().hasKey("Name"));

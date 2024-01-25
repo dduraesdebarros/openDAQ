@@ -39,6 +39,7 @@ public:
     BaseObjectPtr callProperty(const std::string& globalId, const std::string& propertyName, const BaseObjectPtr& params);
 
     bool getConnected() const;
+    ContextPtr getDaqContext();
 
     BaseObjectPtr sendComponentCommand(const StringPtr& globalId,
                                        const StringPtr& command,
@@ -108,8 +109,5 @@ private:
 
     // called on connect to build initial device tree
     void buildDevice(const DevicePtr& device);
-
 };
-
-
 }

@@ -163,27 +163,179 @@ TEST_F(ConfigCoreEventTest, PropertyObjectUpdateEnd)
 
     serverComponent.beginUpdate();
     serverComponent.setPropertyValue("Integer", 3);
-    serverComponent.setPropertyValue("String", "bar");
+    serverComponent.setPropertyValue("Float", 1);
     serverComponent.endUpdate();
     
     serverComponent.beginUpdate();
-    serverComponent.clearPropertyValue("String");
     serverComponent.clearPropertyValue("Integer");
+    serverComponent.clearPropertyValue("Float");
     serverComponent.endUpdate();
 
     ASSERT_EQ(propChangeCount, 0);
     ASSERT_EQ(updateCount, 2);
     ASSERT_EQ(otherCount, 0);
+
+    ASSERT_EQ(clientComponent.getPropertyValue("Integer"), serverComponent.getPropertyValue("Integer"));
+    ASSERT_EQ(clientComponent.getPropertyValue("Float"), serverComponent.getPropertyValue("Float"));
+}
+
+
+TEST_F(ConfigCoreEventTest, PropertyObjectUpdateEndNested)
+{
+    const auto clientComponent = client->getDevice().findComponent("AdvancedPropertiesComponent");
+    const auto serverComponent = serverDevice.findComponent("AdvancedPropertiesComponent");
+
+    const PropertyObjectPtr serverObj1 = serverComponent.getPropertyValue("ObjectWithMetadata");
+    const PropertyObjectPtr serverObj2 = serverComponent.getPropertyValue("ObjectWithMetadata.Child");
+
+    const PropertyObjectPtr obj1 = clientComponent.getPropertyValue("ObjectWithMetadata");
+    const PropertyObjectPtr obj2 = clientComponent.getPropertyValue("ObjectWithMetadata.Child");
+
+    int updateCount = 0;
+    
+    clientContext.getOnCoreEvent() +=
+        [&](const ComponentPtr& comp, const CoreEventArgsPtr& args)
+        {
+            DictPtr<IString, IBaseObject> updated;
+            ASSERT_EQ(args.getEventId(), core_event_ids::PropertyObjectUpdateEnd);
+            updateCount++;
+            updated = args.getParameters().get("UpdatedProperties");
+            ASSERT_EQ(updated.getCount(), 1);
+            ASSERT_EQ(args.getEventName(), "PropertyObjectUpdateEnd");
+            if (updateCount == 1)
+                ASSERT_EQ(obj1, args.getParameters().get("Owner"));
+            else
+                ASSERT_EQ(obj2, args.getParameters().get("Owner"));
+        };
+
+    serverObj1.beginUpdate();
+    serverObj1.setPropertyValue("String", "foo");
+    serverObj1.endUpdate();
+    
+    serverObj2.beginUpdate();
+    serverObj2.setPropertyValue("String", "foo");
+    serverObj2.endUpdate();
+
+    ASSERT_EQ(updateCount, 2);
+    ASSERT_EQ(clientComponent.getPropertyValue("ObjectWithMetadata.String"), serverComponent.getPropertyValue("ObjectWithMetadata.String"));
+    ASSERT_EQ(clientComponent.getPropertyValue("ObjectWithMetadata.Child.String"), serverComponent.getPropertyValue("ObjectWithMetadata.Child.String"));
 }
 
 TEST_F(ConfigCoreEventTest, PropertyAdded)
 {
+    const auto clientComponent = client->getDevice().findComponent("AdvancedPropertiesComponent");
+    const auto serverComponent = serverDevice.findComponent("AdvancedPropertiesComponent");
+
+    int addCount = 0;
+    clientContext.getOnCoreEvent() +=
+        [&](const ComponentPtr& comp, const CoreEventArgsPtr& args)
+        {
+            ASSERT_EQ(args.getEventId(), core_event_ids::PropertyAdded);
+            ASSERT_EQ(args.getEventName(), "PropertyAdded");
+            ASSERT_TRUE(args.getParameters().hasKey("Property"));
+            ASSERT_EQ(comp, args.getParameters().get("Owner"));
+            addCount++;
+        };
+
+    serverComponent.addProperty(StringProperty("test1", "foo"));
+    serverComponent.addProperty(StringProperty("test2", "bar"));
+    serverComponent.addProperty(FloatProperty("test3", 1.123));
+    ASSERT_EQ(addCount, 3);
+
+    ASSERT_EQ(clientComponent.getPropertyValue("test1"), serverComponent.getPropertyValue("test1"));
+    ASSERT_EQ(clientComponent.getPropertyValue("test2"), serverComponent.getPropertyValue("test2"));
+    ASSERT_EQ(clientComponent.getPropertyValue("test3"), serverComponent.getPropertyValue("test3"));
+}
+
+TEST_F(ConfigCoreEventTest, PropertyAddedNested)
+{
+    const auto clientComponent = client->getDevice().findComponent("AdvancedPropertiesComponent");
+    const auto serverComponent = serverDevice.findComponent("AdvancedPropertiesComponent");
     
+    const PropertyObjectPtr serverObj1 = serverComponent.getPropertyValue("ObjectWithMetadata");
+    const PropertyObjectPtr serverObj2 = serverComponent.getPropertyValue("ObjectWithMetadata.Child");
+
+    const PropertyObjectPtr obj1 = clientComponent.getPropertyValue("ObjectWithMetadata");
+    const PropertyObjectPtr obj2 = clientComponent.getPropertyValue("ObjectWithMetadata.Child");
+
+    int addCount = 0;
+    clientContext.getOnCoreEvent() +=
+        [&](const ComponentPtr& /*comp*/, const CoreEventArgsPtr& args)
+        {
+            ASSERT_EQ(args.getEventId(), core_event_ids::PropertyAdded);
+            ASSERT_EQ(args.getEventName(), "PropertyAdded");
+            ASSERT_TRUE(args.getParameters().hasKey("Property"));
+
+            if (addCount == 0)
+                ASSERT_EQ(obj1, args.getParameters().get("Owner"));
+            else
+                ASSERT_EQ(obj2, args.getParameters().get("Owner"));
+
+            addCount++;
+        };
+    
+    serverObj1.addProperty(StringProperty("test", "foo"));
+    serverObj2.addProperty(StringProperty("test", "foo"));
+    ASSERT_EQ(addCount, 2);
 }
 
 TEST_F(ConfigCoreEventTest, PropertyRemoved)
 {
+    const auto clientComponent = client->getDevice().findComponent("AdvancedPropertiesComponent");
+    const auto serverComponent = serverDevice.findComponent("AdvancedPropertiesComponent");
+
+    int removeCount = 0;
+    clientContext.getOnCoreEvent() +=
+        [&](const ComponentPtr& comp, const CoreEventArgsPtr& args)
+        {
+            ASSERT_EQ(args.getEventId(), core_event_ids::PropertyRemoved);
+            ASSERT_EQ(args.getEventName(), "PropertyRemoved");
+            ASSERT_TRUE(args.getParameters().hasKey("Name"));
+            ASSERT_EQ(comp, args.getParameters().get("Owner"));
+            ASSERT_EQ(comp, clientComponent);
+            removeCount++;
+        };
+
+    serverComponent.removeProperty("Integer");
+    serverComponent.removeProperty("Float");
+    serverComponent.removeProperty("String");
+    ASSERT_EQ(removeCount, 3);
+
+    ASSERT_FALSE(clientComponent.hasProperty("Integer"));
+    ASSERT_FALSE(clientComponent.hasProperty("Float"));
+    ASSERT_FALSE(clientComponent.hasProperty("String"));
+}
+
+TEST_F(ConfigCoreEventTest, PropertyRemovedNested)
+{
+    const auto clientComponent = client->getDevice().findComponent("AdvancedPropertiesComponent");
+    const auto serverComponent = serverDevice.findComponent("AdvancedPropertiesComponent");
     
+    const PropertyObjectPtr serverObj1 = serverComponent.getPropertyValue("ObjectWithMetadata");
+    const PropertyObjectPtr serverObj2 = serverComponent.getPropertyValue("ObjectWithMetadata.Child");
+
+    const PropertyObjectPtr obj1 = clientComponent.getPropertyValue("ObjectWithMetadata");
+    const PropertyObjectPtr obj2 = clientComponent.getPropertyValue("ObjectWithMetadata.Child");
+
+    int removeCount = 0;
+    clientContext.getOnCoreEvent() +=
+        [&](const ComponentPtr& /*comp*/, const CoreEventArgsPtr& args)
+        {
+            ASSERT_EQ(args.getEventId(), core_event_ids::PropertyRemoved);
+            ASSERT_EQ(args.getEventName(), "PropertyRemoved");
+            ASSERT_TRUE(args.getParameters().hasKey("Name"));
+
+            if (removeCount == 0)
+                ASSERT_EQ(obj1, args.getParameters().get("Owner"));
+            else
+                ASSERT_EQ(obj2, args.getParameters().get("Owner"));
+
+            removeCount++;
+        };
+    
+    serverObj1.removeProperty("String");
+    serverObj2.removeProperty("String");
+    ASSERT_EQ(removeCount, 2);
 }
 
 TEST_F(ConfigCoreEventTest, ComponentAdded)

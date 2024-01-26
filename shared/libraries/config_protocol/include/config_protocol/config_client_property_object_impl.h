@@ -71,6 +71,7 @@ private:
     void propertyObjectUpdateEnd(const CoreEventArgsPtr& args);
     void propertyAdded(const CoreEventArgsPtr& args);
     void propertyRemoved(const CoreEventArgsPtr& args);
+    PropertyObjectPtr getObjectAtPath(const CoreEventArgsPtr& args);
 };
 
 template <class Impl>
@@ -318,33 +319,84 @@ void ConfigClientPropertyObjectBaseImpl<Impl>::propertyValueChanged(const CoreEv
 template <class Impl>
 void ConfigClientPropertyObjectBaseImpl<Impl>::propertyObjectUpdateEnd(const CoreEventArgsPtr& args)
 {
-    
     const auto params = args.getParameters();
-    StringPtr path = params.get("Path");
-    PropertyObjectPtr obj;
-    PropertyObjectPtr thisPtr = this->template borrowPtr<PropertyObjectPtr>();
-    if (path != "")
-        obj = thisPtr.getPropertyValue(path);
-    else
-        obj = thisPtr;
-
-    obj.beginUpdate();
-
+    const PropertyObjectPtr obj = getObjectAtPath(args);
+    
     const DictPtr<IString, IBaseObject> updatedProperties = params.get("UpdatedProperties");
-    const auto objProtected = obj.asPtr<IPropertyObjectProtected>();
-    for (const auto& val : updatedProperties)
-        objProtected.setProtectedPropertyValue(val.first, val.second);
 
-    obj.endUpdate();
+    if (params.get("Path") != "")
+    {
+        auto objImpl = dynamic_cast<PropertyObjectImpl*>(obj.getObject());
+
+        checkErrorInfo(objImpl->beginUpdate());
+
+        for (const auto& val : updatedProperties)
+        {
+            if (val.second.assigned())
+                checkErrorInfo(objImpl->setProtectedPropertyValue(val.first, val.second));
+            else
+                checkErrorInfo(objImpl->clearProtectedPropertyValue(val.first));
+        }
+
+        checkErrorInfo(objImpl->endUpdate());
+    }
+    else
+    {
+        checkErrorInfo(Impl::beginUpdate());
+
+        for (const auto& val : updatedProperties)
+        {
+            if (val.second.assigned())
+                checkErrorInfo(Impl::setProtectedPropertyValue(val.first, val.second));
+            else
+                checkErrorInfo(Impl::clearProtectedPropertyValue(val.first));
+        }
+
+        checkErrorInfo(Impl::endUpdate());
+    }
+
 }
 
 template <class Impl>
 void ConfigClientPropertyObjectBaseImpl<Impl>::propertyAdded(const CoreEventArgsPtr& args)
 {
+    const auto params = args.getParameters();
+    const PropertyObjectPtr obj = getObjectAtPath(args);
+
+    PropertyPtr prop = params.get("Property");
+    if (obj.hasProperty(prop.getName()))
+        return;
+
+    if (params.get("Path") != "")
+        checkErrorInfo(dynamic_cast<PropertyObjectImpl*>(obj.getObject())->addProperty(prop));
+    else
+        checkErrorInfo(Impl::addProperty(prop));
 }
 
 template <class Impl>
 void ConfigClientPropertyObjectBaseImpl<Impl>::propertyRemoved(const CoreEventArgsPtr& args)
 {
+    const auto params = args.getParameters();
+    const PropertyObjectPtr obj = getObjectAtPath(args);
+    
+    const StringPtr propName = params.get("Name");
+    if (!obj.hasProperty(propName))
+        return;
+
+    if (params.get("Path") != "")
+        checkErrorInfo(dynamic_cast<PropertyObjectImpl*>(obj.getObject())->removeProperty(propName));
+    else
+        checkErrorInfo(Impl::removeProperty(propName));
+}
+
+template <class Impl>
+PropertyObjectPtr ConfigClientPropertyObjectBaseImpl<Impl>::getObjectAtPath(const CoreEventArgsPtr& args)
+{
+    const auto params = args.getParameters();
+    const StringPtr path = params.get("Path");
+    PropertyObjectPtr thisPtr = this->template borrowPtr<PropertyObjectPtr>();
+    if (path != "")
+        return thisPtr.getPropertyValue(path);
+    return thisPtr;
 }
 }

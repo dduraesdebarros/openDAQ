@@ -178,6 +178,13 @@ BaseObjectPtr ConfigProtocolClientComm::deserializeConfigComponent(const StringP
         return obj;
     }
 
+    if (typeId == "Component")
+    {
+        BaseObjectPtr obj;
+        checkErrorInfo(ConfigClientComponentImpl::Deserialize(serObj, context, factoryCallback, &obj));
+        return obj;
+    }
+
     if (typeId == "IoFolder")
     {
         BaseObjectPtr obj;

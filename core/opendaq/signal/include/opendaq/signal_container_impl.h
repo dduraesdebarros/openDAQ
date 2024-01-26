@@ -70,6 +70,7 @@ protected:
     FolderConfigPtr addFolder(const std::string& localId, const FolderConfigPtr& parent = nullptr);
 
     ComponentPtr addComponent(const std::string& localId, const FolderConfigPtr& parent = nullptr);
+    ComponentPtr addExistingComponent(const ComponentPtr& component, const FolderConfigPtr& parent = nullptr);
 
     void removed() override;
 
@@ -91,11 +92,11 @@ protected:
     void serializeFolder(const SerializerPtr& serializer, const FolderConfigPtr& folder, const std::string& id, bool forUpdate);
 
     template <class FolderPtr>
-    void deserializeFolder(const SerializedObjectPtr& serializedObject,
-                           const BaseObjectPtr& context,
-                           const FunctionPtr& factoryCallback,
-                           FolderPtr& folder,
-                           const std::string& id);
+    void deserializeDefaultFolder(const SerializedObjectPtr& serializedObject,
+                                  const BaseObjectPtr& context,
+                                  const FunctionPtr& factoryCallback,
+                                  FolderPtr& folder,
+                                  const std::string& id);
 
     virtual bool clearFunctionBlocksOnUpdate();
 
@@ -447,6 +448,34 @@ ComponentPtr GenericSignalContainerImpl<Intf, Intfs...>::addComponent(const std:
 }
 
 template <class Intf, class ... Intfs>
+ComponentPtr GenericSignalContainerImpl<Intf, Intfs...>::addExistingComponent(const ComponentPtr& component, const FolderConfigPtr& parent)
+{
+    if (!parent.assigned())
+    {
+        validateComponentNotExists(component.getLocalId());
+        if (!allowNonDefaultComponents)
+            validateComponentIsDefault(component.getLocalId());
+
+        this->components.push_back(component);
+
+        if (!this->coreEventMuted && this->coreEvent.assigned())
+        {
+            const auto args = createWithImplementation<ICoreEventArgs, CoreEventArgsImpl>(
+                    core_event_ids::ComponentAdded,
+                    Dict<IString, IBaseObject>({{"Component", component}}));
+            
+            this->triggerCoreEvent(args);
+            component.template asPtr<IPropertyObjectInternal>().enableCoreEventTrigger();
+        }
+
+        return component;
+    }
+
+    parent.addItem(component);
+    return component;
+}
+
+template <class Intf, class ... Intfs>
 void GenericSignalContainerImpl<Intf, Intfs...>::removed()
 {
     for (const auto& component : this->components)
@@ -485,11 +514,11 @@ void GenericSignalContainerImpl<Intf, Intfs...>::swapComponent(Component& origCo
 
 template <class Intf, class... Intfs>
 template <class FolderPtr>
-void GenericSignalContainerImpl<Intf, Intfs...>::deserializeFolder(const SerializedObjectPtr& serializedObject,
-                                                                   const BaseObjectPtr& context,
-                                                                   const FunctionPtr& factoryCallback,
-                                                                   FolderPtr& folder,
-                                                                   const std::string& id)
+void GenericSignalContainerImpl<Intf, Intfs...>::deserializeDefaultFolder(const SerializedObjectPtr& serializedObject,
+                                                                          const BaseObjectPtr& context,
+                                                                          const FunctionPtr& factoryCallback,
+                                                                          FolderPtr& folder,
+                                                                          const std::string& id)
 {
     if (serializedObject.hasKey(id))
     {
@@ -551,8 +580,8 @@ void GenericSignalContainerImpl<Intf, Intfs...>::deserializeCustomObjectValues(
 {
     Super::deserializeCustomObjectValues(serializedObject, context, factoryCallback);
 
-    deserializeFolder(serializedObject, context, factoryCallback, this->signals, "Sig");
-    deserializeFolder(serializedObject, context, factoryCallback, this->functionBlocks, "FB");
+    deserializeDefaultFolder(serializedObject, context, factoryCallback, this->signals, "Sig");
+    deserializeDefaultFolder(serializedObject, context, factoryCallback, this->functionBlocks, "FB");
 }
 
 template <class Intf, class ... Intfs>

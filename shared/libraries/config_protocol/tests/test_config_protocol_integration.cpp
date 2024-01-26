@@ -3,126 +3,17 @@
 #include <gmock/gmock.h>
 #include <config_protocol/config_protocol_server.h>
 #include <config_protocol/config_protocol_client.h>
-#include <opendaq/device_ptr.h>
-#include <opendaq/function_block_impl.h>
-#include <opendaq/device_impl.h>
-#include <opendaq/channel_impl.h>
-#include <opendaq/context_factory.h>
-#include <coreobjects/argument_info_factory.h>
-#include <coreobjects/callable_info_factory.h>
+#include "test_utils.h"
 #include <config_protocol/config_client_object_ptr.h>
+#include "coreobjects/argument_info_factory.h"
+#include "coreobjects/callable_info_factory.h"
+#include "opendaq/context_factory.h"
 
 using namespace daq;
 using namespace config_protocol;
 using namespace testing;
 using namespace std::placeholders;
 
-class MockFb1Impl final : public FunctionBlock
-{
-public:
-    MockFb1Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
-        : FunctionBlock(FunctionBlockType("test_uid", "test_name", "test_description"), ctx, parent, localId)
-    {
-        createAndAddSignal("sig1");
-        createAndAddSignal("sig2");
-        createAndAddInputPort("ip", PacketReadyNotification::None);
-    }
-};
-
-class MockFb2Impl final : public FunctionBlock
-{
-public:
-    MockFb2Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
-        : FunctionBlock(FunctionBlockType("test_uid", "test_name", "test_description"), ctx, parent, localId)
-    {
-        createAndAddSignal("sig");
-        createAndAddInputPort("ip", PacketReadyNotification::None);
-        const auto childFb = createWithImplementation<IFunctionBlock, MockFb1Impl>(ctx, this->functionBlocks, "childFb");
-        addNestedFunctionBlock(childFb);
-    }
-};
-
-class MockChannel1Impl final : public Channel
-{
-public:
-    MockChannel1Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
-        : Channel(FunctionBlockType("ch", "", ""), ctx, parent, localId)
-    {
-        createAndAddSignal("sig_ch");
-        const auto childFb = createWithImplementation<IFunctionBlock, MockFb1Impl>(ctx, this->functionBlocks, "childFb");
-        addNestedFunctionBlock(childFb);
-    }
-};
-
-class MockChannel2Impl final : public Channel
-{
-public:
-    MockChannel2Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
-        : Channel(FunctionBlockType("ch", "", ""), ctx, parent, localId)
-    {
-        createAndAddSignal("sig_ch");
-        createAndAddInputPort("ip", PacketReadyNotification::None);
-
-        objPtr.addProperty(StringPropertyBuilder("StrProp", "-").build());
-        objPtr.addProperty(StringPropertyBuilder("StrPropProtected", "").setReadOnly(True).build());
-    }
-};
-
-class MockDevice1Impl final : public Device
-{
-public:
-    MockDevice1Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
-        : Device(ctx, parent, localId)
-    {
-        createAndAddSignal("sig_device");
-
-        auto aiIoFolder = this->addIoFolder("ai", ioFolder);
-        createAndAddChannel<MockChannel1Impl>(aiIoFolder, "ch");
-
-        const auto fb = createWithImplementation<IFunctionBlock, MockFb1Impl>(ctx, this->functionBlocks, "fb");
-        addNestedFunctionBlock(fb);
-    }
-
-    DictPtr<IString, IFunctionBlockType> onGetAvailableFunctionBlockTypes() override
-    {
-        auto fbTypes = Dict<IString, IFunctionBlockType>({{"mockfb1", FunctionBlockType("mockfb1", "MockFB1", "Mock FB1", nullptr)}});
-        return fbTypes;
-    }
-
-    FunctionBlockPtr onAddFunctionBlock(const StringPtr& typeId, const PropertyObjectPtr& config) override
-    {
-        if (typeId == "mockfb1")
-        {
-            if (!config.assigned())
-                throw InvalidParameterException();
-
-            const StringPtr param = config.getPropertyValue("Param");
-            if (param != "Value")
-                throw InvalidParameterException();
-
-            const auto fb = createWithImplementation<IFunctionBlock, MockFb1Impl>(context, this->functionBlocks, "newFb");
-            addNestedFunctionBlock(fb);
-            return fb;
-        }
-        throw NotFoundException();
-    }
-};
-
-class MockDevice2Impl final : public Device
-{
-public:
-    MockDevice2Impl(const ContextPtr& ctx, const ComponentPtr& parent, const StringPtr& localId)
-        : Device(ctx, parent, localId)
-    {
-        createAndAddSignal("sig_device");
-
-        auto aiIoFolder = this->addIoFolder("ai", ioFolder);
-        createAndAddChannel<MockChannel2Impl>(aiIoFolder, "ch");
-
-        const auto dev = createWithImplementation<IDevice, MockDevice1Impl>(ctx, this->devices, "dev");
-        devices.addItem(dev);
-    }
-};
 
 class ConfigProtocolIntegrationTest : public Test
 {
@@ -135,12 +26,6 @@ public:
         return str;
     }
 
-    static DevicePtr createServerDevice()
-    {
-        const auto serverDevice = createWithImplementation<IDevice, MockDevice2Impl>(NullContext(), nullptr, "root_dev");
-        return serverDevice;
-    }
-
     static PacketBuffer sendPacket(ConfigProtocolServer& server, const PacketBuffer& requestPacket)
     {
         auto replyPacket = server.processRequestAndGetReply(requestPacket);
@@ -150,7 +35,7 @@ public:
 
 TEST_F(ConfigProtocolIntegrationTest, Connect)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     const auto serverDeviceSerialized = serializeComponent(serverDevice);
 
     ConfigProtocolServer server(serverDevice, nullptr);
@@ -165,7 +50,7 @@ TEST_F(ConfigProtocolIntegrationTest, Connect)
 
 TEST_F(ConfigProtocolIntegrationTest, RemoteGlobalIds)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     const auto serverDeviceSerialized = serializeComponent(serverDevice);
 
     ConfigProtocolServer server(serverDevice, nullptr);
@@ -187,7 +72,7 @@ TEST_F(ConfigProtocolIntegrationTest, RemoteGlobalIds)
 
 TEST_F(ConfigProtocolIntegrationTest, ConnectWithParent)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     const auto serverDeviceSerialized = serializeComponent(serverDevice);
 
     ConfigProtocolServer server(serverDevice, nullptr);
@@ -217,7 +102,7 @@ void checkComponentForConfigClientObject(const ComponentPtr& component)
 
 TEST_F(ConfigProtocolIntegrationTest, CheckConfigClientObject)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     const auto serverDeviceSerialized = serializeComponent(serverDevice);
 
     ConfigProtocolServer server(serverDevice, nullptr);
@@ -231,7 +116,7 @@ TEST_F(ConfigProtocolIntegrationTest, CheckConfigClientObject)
 
 TEST_F(ConfigProtocolIntegrationTest, GetInitialPropertyValue)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     serverDevice.getChannels()[0].setPropertyValue("StrProp", "SomeValue");
 
     const auto serverDeviceSerialized = serializeComponent(serverDevice);
@@ -252,7 +137,7 @@ TEST_F(ConfigProtocolIntegrationTest, GetInitialPropertyValue)
 
 TEST_F(ConfigProtocolIntegrationTest, SetPropertyValue)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     ConfigProtocolServer server(serverDevice, nullptr);
 
     ConfigProtocolClient client(NullContext(), std::bind(sendPacket, std::ref(server), _1), nullptr);
@@ -268,7 +153,7 @@ TEST_F(ConfigProtocolIntegrationTest, SetPropertyValue)
 
 TEST_F(ConfigProtocolIntegrationTest, SetProtectedPropertyValue)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     ConfigProtocolServer server(serverDevice, nullptr);
 
     ConfigProtocolClient client(NullContext(), std::bind(sendPacket, std::ref(server), _1), nullptr);
@@ -286,7 +171,7 @@ TEST_F(ConfigProtocolIntegrationTest, SetProtectedPropertyValue)
 
 TEST_F(ConfigProtocolIntegrationTest, ClearPropertyValue)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     serverDevice.getChannels()[0].setPropertyValue("StrProp", "SomeValue");
 
     ConfigProtocolServer server(serverDevice, nullptr);
@@ -303,7 +188,7 @@ TEST_F(ConfigProtocolIntegrationTest, ClearPropertyValue)
 
 TEST_F(ConfigProtocolIntegrationTest, CallFuncProp)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     const auto serverCh = serverDevice.getChannels()[0];
     const auto funcProp =
         FunctionPropertyBuilder("FuncProp", FunctionInfo(ctInt, List<IArgumentInfo>(ArgumentInfo("A", ctInt), ArgumentInfo("B", ctInt))))
@@ -328,7 +213,7 @@ TEST_F(ConfigProtocolIntegrationTest, CallFuncProp)
 
 TEST_F(ConfigProtocolIntegrationTest, CallProcProp)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
     const auto serverCh = serverDevice.getChannels()[0];
     const auto procProp =
         FunctionPropertyBuilder("ProcProp", ProcedureInfo())
@@ -354,7 +239,7 @@ TEST_F(ConfigProtocolIntegrationTest, CallProcProp)
 
 TEST_F(ConfigProtocolIntegrationTest, GetAvailableFunctionBlockTypes)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
 
     ConfigProtocolServer server(serverDevice, nullptr);
     const auto serverSubDevice = serverDevice.getDevices()[0];
@@ -371,7 +256,7 @@ TEST_F(ConfigProtocolIntegrationTest, GetAvailableFunctionBlockTypes)
 
 TEST_F(ConfigProtocolIntegrationTest, AddFunctionBlockNotFound)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
 
     ConfigProtocolServer server(serverDevice, nullptr);
     const auto serverSubDevice = serverDevice.getDevices()[0];
@@ -387,7 +272,7 @@ TEST_F(ConfigProtocolIntegrationTest, AddFunctionBlockNotFound)
 
 TEST_F(ConfigProtocolIntegrationTest, AddFunctionBlock)
 {
-    const auto serverDevice = createServerDevice();
+    const auto serverDevice = test_utils::createServerDevice();
 
     ConfigProtocolServer server(serverDevice, nullptr);
     const auto serverSubDevice = serverDevice.getDevices()[0];

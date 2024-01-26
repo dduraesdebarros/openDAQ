@@ -43,15 +43,15 @@ public:
 
     ErrCode INTERFACE_FUNC setPropertyValue(IString* propertyName, IBaseObject* value) override;
     ErrCode INTERFACE_FUNC setProtectedPropertyValue(IString* propertyName, IBaseObject* value) override;
-    ErrCode INTERFACE_FUNC getPropertyValue(IString* propertyName, IBaseObject** value) override;
-    ErrCode INTERFACE_FUNC getPropertySelectionValue(IString* propertyName, IBaseObject** value) override;
+    //ErrCode INTERFACE_FUNC getPropertyValue(IString* propertyName, IBaseObject** value) override;
+    //ErrCode INTERFACE_FUNC getPropertySelectionValue(IString* propertyName, IBaseObject** value) override;
     ErrCode INTERFACE_FUNC clearPropertyValue(IString* propertyName) override;
-    ErrCode INTERFACE_FUNC getProperty(IString* propertyName, IProperty** value) override;
+    //ErrCode INTERFACE_FUNC getProperty(IString* propertyName, IProperty** value) override;
     ErrCode INTERFACE_FUNC addProperty(IProperty* property) override;
     ErrCode INTERFACE_FUNC removeProperty(IString* propertyName) override;
     ErrCode INTERFACE_FUNC getOnPropertyValueWrite(IString* propertyName, IEvent** event) override;
     ErrCode INTERFACE_FUNC getOnPropertyValueRead(IString* propertyName, IEvent** event) override;
-    ErrCode INTERFACE_FUNC getVisibleProperties(IList** properties) override;
+    //ErrCode INTERFACE_FUNC getVisibleProperties(IList** properties) override;
     ErrCode INTERFACE_FUNC hasProperty(IString* propertyName, Bool* hasProperty) override;
     ErrCode INTERFACE_FUNC getAllProperties(IList** properties) override;
     ErrCode INTERFACE_FUNC setPropertyOrder(IList* orderedPropertyNames) override;
@@ -114,37 +114,37 @@ ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::setProtectedPropertyValue(IStr
     });
 }
 
-template <class Impl>
-ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getPropertyValue(IString* propertyName, IBaseObject** value)
-{
-    OPENDAQ_PARAM_NOT_NULL(propertyName);
-    OPENDAQ_PARAM_NOT_NULL(value);
-
-    const auto propertyNamePtr = StringPtr::Borrow(propertyName);
-
-    return daqTry(
-        [this, &propertyNamePtr, &value]()
-        {
-            if (clientComm->getConnected())
-            {
-                bool setValue;
-                auto v = getValueFromServer(propertyNamePtr, setValue);
-
-                if (setValue)
-                    Impl::setPropertyValue(propertyNamePtr, v);
-                *value = v.detach();
-                return OPENDAQ_SUCCESS;
-            }
-
-            return Impl::getPropertyValue(propertyNamePtr, value);
-        });
-}
-
-template <class Impl>
-ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getPropertySelectionValue(IString* propertyName, IBaseObject** value)
-{
-    return Impl::getPropertySelectionValue(propertyName, value);
-}
+//template <class Impl>
+//ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getPropertyValue(IString* propertyName, IBaseObject** value)
+//{
+//    OPENDAQ_PARAM_NOT_NULL(propertyName);
+//    OPENDAQ_PARAM_NOT_NULL(value);
+//
+//    const auto propertyNamePtr = StringPtr::Borrow(propertyName);
+//
+//    return daqTry(
+//        [this, &propertyNamePtr, &value]()
+//        {
+//            if (clientComm->getConnected())
+//            {
+//                bool setValue;
+//                auto v = getValueFromServer(propertyNamePtr, setValue);
+//
+//                if (setValue)
+//                    Impl::setPropertyValue(propertyNamePtr, v);
+//                *value = v.detach();
+//                return OPENDAQ_SUCCESS;
+//            }
+//
+//            return Impl::getPropertyValue(propertyNamePtr, value);
+//        });
+//}
+//
+//template <class Impl>
+//ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getPropertySelectionValue(IString* propertyName, IBaseObject** value)
+//{
+//    return Impl::getPropertySelectionValue(propertyName, value);
+//}
 
 template <class Impl>
 ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::clearPropertyValue(IString* propertyName)
@@ -158,11 +158,11 @@ ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::clearPropertyValue(IString* pr
     });
 }
 
-template <class Impl>
-ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getProperty(IString* propertyName, IProperty** value)
-{
-    return Impl::getProperty(propertyName, value);
-}
+//template <class Impl>
+//ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getProperty(IString* propertyName, IProperty** value)
+//{
+//    return Impl::getProperty(propertyName, value);
+//}
 
 template <class Impl>
 ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::addProperty(IProperty* property)
@@ -190,12 +190,12 @@ ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getOnPropertyValueRead(IString
 {
     return Impl::getOnPropertyValueRead(propertyName, event);
 }
-
-template <class Impl>
-ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getVisibleProperties(IList** properties)
-{
-    return Impl::getVisibleProperties(properties);
-}
+//
+//template <class Impl>
+//ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::getVisibleProperties(IList** properties)
+//{
+//    return Impl::getVisibleProperties(properties);
+//}
 
 template <class Impl>
 ErrCode ConfigClientPropertyObjectBaseImpl<Impl>::hasProperty(IString* propertyName, Bool* hasProperty)
@@ -318,6 +318,24 @@ void ConfigClientPropertyObjectBaseImpl<Impl>::propertyValueChanged(const CoreEv
 template <class Impl>
 void ConfigClientPropertyObjectBaseImpl<Impl>::propertyObjectUpdateEnd(const CoreEventArgsPtr& args)
 {
+    
+    const auto params = args.getParameters();
+    StringPtr path = params.get("Path");
+    PropertyObjectPtr obj;
+    PropertyObjectPtr thisPtr = this->template borrowPtr<PropertyObjectPtr>();
+    if (path != "")
+        obj = thisPtr.getPropertyValue(path);
+    else
+        obj = thisPtr;
+
+    obj.beginUpdate();
+
+    const DictPtr<IString, IBaseObject> updatedProperties = params.get("UpdatedProperties");
+    const auto objProtected = obj.asPtr<IPropertyObjectProtected>();
+    for (const auto& val : updatedProperties)
+        objProtected.setProtectedPropertyValue(val.first, val.second);
+
+    obj.endUpdate();
 }
 
 template <class Impl>

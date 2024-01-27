@@ -13,6 +13,7 @@ namespace RTGen.Types
         public NextMethod()
         {
             Arguments = new Options<IArgumentInfo>();
+            EvalValues = new Options<string>();
         }
 
         /// <summary>If not <c>null</c> next apply defaults to property method.</summary>
@@ -26,6 +27,9 @@ namespace RTGen.Types
 
         /// <summary>If a method should return the object instead of null.</summary>
         public bool ReturnSelf { get; set; }
+
+        /// <summary>A set of arguments that could be represented by EvalValues.</summary>
+        public IOptions<string> EvalValues { get; set; }
 
         /// <summary>Additional info about method's arguments.</summary>
         public IOptions<IArgumentInfo> Arguments { get; set; }
@@ -41,6 +45,7 @@ namespace RTGen.Types
             Documentation = null;
             IsIgnored = GeneratorType.None;
             ReturnSelf = false;
+            EvalValues.Clear();
             Arguments.Clear();
 
             ClearProperties();

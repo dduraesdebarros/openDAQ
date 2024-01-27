@@ -554,6 +554,13 @@ namespace RTGen.Cpp.Parser {
             method.ReturnSelf = Attributes.Next.Method.ReturnSelf;
             method.Documentation = Attributes.Next.Method.Documentation;
 
+            foreach(var eval in Attributes.Next.Method.EvalValues)
+            {
+                var argument = method.Arguments.FirstOrDefault(arg => arg.Name == eval.Key && !arg.IsOutParam);
+                if (argument == null) continue;
+                argument.IsEvalValue = true;
+            }
+
             currentClass.Methods.Add(method);
             Attributes.Next.Method.Reset();
         }

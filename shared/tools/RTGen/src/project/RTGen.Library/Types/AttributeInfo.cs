@@ -150,7 +150,8 @@ namespace RTGen.Types
                 {"arrayArg", ArrayPointerArgument},
                 {"factory", FactorySettings},
                 {"isCoreConfig", IsCoreConfigAttribute},
-                {"returnSelf", ReturnSelfAttribute}
+                {"returnSelf", ReturnSelfAttribute},
+                {"evalValue", EvalValueAttribute}
             };
 
             DefaultBasePtr = "ObjectPtr";
@@ -448,6 +449,14 @@ namespace RTGen.Types
             }
 
             Next.Method.ReturnSelf = true;
+        }
+
+        private void EvalValueAttribute(IRTAttribute attribute)
+        {
+            foreach(IRTAttributeArgument argument in attribute.Arguments)
+            {
+                Next.Method.EvalValues.Add(argument.Value, argument.Name);
+            }
         }
 
         private void IgnoreMethod(IRTAttribute attribute)
